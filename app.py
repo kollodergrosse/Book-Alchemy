@@ -2,6 +2,7 @@ from flask import Flask, render_template, request, redirect, url_for, flash
 from datetime import datetime
 import os
 from data_models import db, Author, Book
+from sqlalchemy.exc import IntegrityError, OperationalError, SQLAlchemyError
 
 app = Flask(__name__)
 
@@ -43,14 +44,16 @@ def add_author():
             try:
                 birth_date = datetime.strptime(birth_date_raw, '%Y-%m-%d').date()
             except ValueError:
-                pass
+                flash('Invalid birth date format. Please use YYYY-MM-DD.', 'danger')
+                return render_template('add_author.html')
 
         date_of_death = None
         if date_of_death_raw:
             try:
                 date_of_death = datetime.strptime(date_of_death_raw, '%Y-%m-%d').date()
             except ValueError:
-                pass
+                flash('Invalid date of death format. Please use YYYY-MM-DD.', 'danger')
+                return render_template('add_author.html')
 
         try:
             new_author = Author(
@@ -62,11 +65,23 @@ def add_author():
             db.session.commit()
 
             flash(f'Author "{name}" was added successfully!', 'success')
-            return redirect(url_for('add_author'))
+            return redirect(url_for('home'))
 
-        except Exception as e:
+        except ValueError as e:
             db.session.rollback()
-            flash('Error trying to save new author.', 'danger')
+            flash(f'Validation Error: {str(e)}', 'danger')
+
+        except IntegrityError:
+            db.session.rollback()
+            flash('Database integrity error. This author might already exist.', 'danger')
+
+        except OperationalError:
+            db.session.rollback()
+            flash('Database operational error. Please try again later.', 'danger')
+
+        except SQLAlchemyError:
+            db.session.rollback()
+            flash('A database error occurred while saving the author.', 'danger')
 
     return render_template('add_author.html')
 
@@ -98,6 +113,13 @@ def add_book():
         author_id = int(author_id)
 
         try:
+            publication_year = int(publication_year) if publication_year else None
+            author_id = int(author_id)
+
+        except ValueError:
+            flash('Invalid input: Publication year and Author must be numbers.', 'danger')
+
+        try:
             new_book = Book(
                 title=title,
                 isbn=isbn,
@@ -110,11 +132,24 @@ def add_book():
             flash(f'The book "{title}" has been added successfully!', 'success')
             return redirect(url_for('home'))
 
-        except Exception as e:
+        except ValueError as e:
             db.session.rollback()
-            flash('Error saving the book.', 'danger')
+            flash(f'Validation Error: {str(e)}', 'danger')
+
+        except IntegrityError:
+            db.session.rollback()
+            flash('Error: A book with this ISBN already exists in the database.', 'danger')
+
+        except OperationalError:
+            db.session.rollback()
+            flash('Database is temporarily unavailable. Please try again.', 'danger')
+
+        except SQLAlchemyError:
+            db.session.rollback()
+            flash('An unexpected database error occurred while saving the book.', 'danger')
 
     authors = Author.query.all()
+
     return render_template('add_book.html', authors=authors)
 
 
@@ -148,12 +183,17 @@ def delete_book(book_id):
                 author_info_msg = f"(The author {author.name} has been deleted as well.)"
 
         db.session.commit()
-
         flash(f'The book "{book_title}" was deleted successfully!{author_info_msg}', 'success')
 
-    except Exception as e:
+    except IntegrityError:
         db.session.rollback()
-        flash('Error.', 'danger')
+        flash('Could not delete data due to dependency constraints in the database.', 'danger')
+    except OperationalError:
+        db.session.rollback()
+        flash('Database connection error. Action aborted.', 'danger')
+    except SQLAlchemyError:
+        db.session.rollback()
+        flash('An error occurred within the database layer during deletion.', 'danger')
 
     return redirect(url_for('home'))
 

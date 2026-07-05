@@ -5,7 +5,6 @@ db = SQLAlchemy()
 class Author(db.Model):
     """
     Represents an author within the library database.
-
     Attributes:
         id (int): Unique identifier and primary key for the author.
         name (str): The full name of the author. Cannot be null.
